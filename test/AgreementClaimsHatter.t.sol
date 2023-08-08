@@ -2,10 +2,10 @@
 pragma solidity ^0.8.18;
 
 import { Test, console2 } from "forge-std/Test.sol";
-import { Counter } from "../src/Counter.sol";
+import { AgreementClaimsHatter } from "../src/AgreementClaimsHatter.sol";
 import { Deploy } from "../script/Counter.s.sol";
 
-contract CounterTest is Deploy, Test {
+contract AgreementClaimsHatterTest is Deploy, Test {
   // variables inhereted from Deploy script
   // Counter public counter;
 
@@ -21,15 +21,5 @@ contract CounterTest is Deploy, Test {
     Deploy.run();
 
     counter.setNumber(0);
-  }
-
-  function testIncrement() public {
-    counter.increment();
-    assertEq(counter.number(), 1);
-  }
-
-  function testSetNumber(uint256 x) public {
-    counter.setNumber(x);
-    assertEq(counter.number(), x);
   }
 }

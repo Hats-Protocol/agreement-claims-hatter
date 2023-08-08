@@ -2,10 +2,10 @@
 pragma solidity ^0.8.18;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { Counter } from "../src/Counter.sol";
+import { AgreementClaimsHatter } from "../src/AgreementClaimsHatter.sol";
 
 contract Deploy is Script {
-  Counter public counter;
+  AgreementClaimsHatter public ach;
   bytes32 public SALT = keccak256("lets add some salt to this meal");
 
   // default values
@@ -21,12 +21,12 @@ contract Deploy is Script {
     address deployer = vm.rememberKey(privKey);
     vm.startBroadcast(deployer);
 
-    counter = new Counter{ salt: SALT}();
+    ach = new AgreementClaimsHatter{ salt: SALT}();
 
     vm.stopBroadcast();
 
     if (verbose) {
-      console2.log("Counter:", address(counter));
+      console2.log("Counter:", address(ach));
     }
   }
 }
