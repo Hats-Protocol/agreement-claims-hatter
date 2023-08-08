@@ -10,10 +10,12 @@ contract Deploy is Script {
 
   // default values
   bool private verbose = true;
+  string private version = "0.0.1"; // increment with each deployment
 
   /// @notice Override default values, if desired
-  function prepare(bool _verbose) public {
+  function prepare(bool _verbose, string memory _version) public {
     verbose = _verbose;
+    version = _version;
   }
 
   function run() public {
@@ -21,7 +23,7 @@ contract Deploy is Script {
     address deployer = vm.rememberKey(privKey);
     vm.startBroadcast(deployer);
 
-    ach = new AgreementClaimsHatter{ salt: SALT}();
+    ach = new AgreementClaimsHatter{ salt: SALT}(version);
 
     vm.stopBroadcast();
 
