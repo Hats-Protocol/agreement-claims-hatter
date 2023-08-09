@@ -5,7 +5,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { AgreementClaimsHatter } from "../src/AgreementClaimsHatter.sol";
 
 contract Deploy is Script {
-  AgreementClaimsHatter public ach;
+  address public implementation;
   bytes32 public SALT = keccak256("lets add some salt to this meal");
 
   // default values
@@ -23,12 +23,12 @@ contract Deploy is Script {
     address deployer = vm.rememberKey(privKey);
     vm.startBroadcast(deployer);
 
-    ach = new AgreementClaimsHatter{ salt: SALT}(version);
+    implementation = address(new AgreementClaimsHatter{ salt: SALT}(version));
 
     vm.stopBroadcast();
 
     if (verbose) {
-      console2.log("Counter:", address(ach));
+      console2.log("Implementation:", implementation);
     }
   }
 }
