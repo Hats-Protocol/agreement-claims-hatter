@@ -68,16 +68,19 @@ contract WithInstanceTest is AgreementClaimsHatterTest {
 
   bytes32 public agreement;
   uint256 public gracePeriod;
+  uint256 public minGrace = 7 days;
+  uint256 public currentAgreementId;
 
   function deployInstance(
     uint256 _claimableHat,
     uint256 _ownerHat,
     uint256 _arbitratorHat,
+    uint256 _minGrace,
     bytes32 _agreement,
     uint256 _grace
   ) public returns (AgreementClaimsHatter) {
     // encode the other immutable args as packed bytes
-    otherImmutableArgs = abi.encodePacked(_ownerHat, _arbitratorHat);
+    otherImmutableArgs = abi.encodePacked(_ownerHat, _arbitratorHat, _minGrace);
     // encoded the initData as unpacked bytes -- for HatsOnboardingShaman, we just need any non-empty bytes
     initData = abi.encode(_agreement, _grace);
     // deploy the instance
@@ -106,7 +109,7 @@ contract WithInstanceTest is AgreementClaimsHatterTest {
     gracePeriod = 9 days; // the min + 2 days
 
     // deploy the instance
-    instance = deployInstance(claimableHat, tophat, arbitratorHat, agreement, gracePeriod);
+    instance = deployInstance(claimableHat, tophat, arbitratorHat, minGrace, agreement, gracePeriod);
 
     // set instance as claimableHat's eligibility module
     vm.startPrank(dao);
@@ -143,7 +146,11 @@ contract Deployment is WithInstanceTest {
   }
 
   function test_agreement() public {
-    assertEq(instance.agreement(), agreement);
+    assertEq(instance.getCurrentAgreement(), agreement);
+  }
+
+  function test_agreementId() public {
+    assertEq(instance.currentAgreementId(), 1);
   }
 
   function test_graceEndsAt() public {
@@ -166,7 +173,8 @@ contract SetAgreement is WithInstanceTest {
     vm.prank(dao);
     instance.setAgreement(agreement, gracePeriod);
 
-    assertEq(instance.agreement(), agreement);
+    assertEq(instance.getCurrentAgreement(), agreement);
+    assertEq(instance.currentAgreementId(), 2);
     assertEq(instance.graceEndsAt(), block.timestamp + gracePeriod);
   }
 
@@ -208,7 +216,7 @@ contract Claim is WithInstanceTest {
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
   }
 
@@ -220,7 +228,7 @@ contract Claim is WithInstanceTest {
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // second claim
@@ -230,7 +238,7 @@ contract Claim is WithInstanceTest {
     vm.prank(claimer2);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer2), agreement);
+    assertEq(instance.claimerAgreements(claimer2), 1);
     assertTrue(HATS.isWearerOfHat(claimer2, claimableHat));
   }
 
@@ -238,7 +246,7 @@ contract Claim is WithInstanceTest {
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // now try again, expecting a revert
@@ -269,7 +277,7 @@ contract SignAgreement is WithInstanceTest {
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // new agreement is set
@@ -284,7 +292,7 @@ contract SignAgreement is WithInstanceTest {
     vm.prank(claimer1);
     instance.signAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), newAgreement);
+    assertEq(instance.claimerAgreements(claimer1), 2);
   }
 
   function test_revert_hatNotClaimed() public {
@@ -299,7 +307,7 @@ contract SignAgreement is WithInstanceTest {
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
 
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // no new agreement is set
@@ -309,6 +317,37 @@ contract SignAgreement is WithInstanceTest {
 
     vm.prank(claimer1);
     instance.signAgreement();
+  }
+
+  function test_afterGracePeriod() public {
+    // claim the hat
+    vm.prank(claimer1);
+    instance.claimHatWithAgreement();
+
+    assertEq(instance.claimerAgreements(claimer1), 1);
+    assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
+
+    // new agreement is set
+    bytes32 newAgreement = keccak256("this is the new agreement");
+    vm.prank(dao);
+    instance.setAgreement(newAgreement, gracePeriod);
+
+    // warp past the grace period
+    vm.warp(instance.graceEndsAt());
+
+    // not wearing the hat any more
+    assertFalse(HATS.isWearerOfHat(claimer1, claimableHat));
+
+    // sign the new agreement
+    vm.expectEmit();
+    emit AgreementClaimsHatter_AgreementSigned(claimer1, newAgreement);
+
+    vm.prank(claimer1);
+    instance.signAgreement();
+    assertEq(instance.claimerAgreements(claimer1), 2);
+
+    // now wearing the hat again
+    assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
   }
 }
 
@@ -322,7 +361,7 @@ contract Revoke is WithInstanceTest {
     vm.prank(arbitrator);
     instance.revoke(claimer1);
 
-    assertEq(instance.badStandings(claimer1), true);
+    assertFalse(instance.wearerStanding(claimer1));
     assertFalse(HATS.isWearerOfHat(claimer1, claimableHat));
   }
 
@@ -336,8 +375,47 @@ contract Revoke is WithInstanceTest {
     vm.expectRevert(AgreementClaimsHatter_NotArbitrator.selector);
     instance.revoke(claimer1);
 
-    assertEq(instance.badStandings(claimer1), false);
+    assertTrue(instance.wearerStanding(claimer1));
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
+  }
+}
+
+contract Forgive is WithInstanceTest {
+  function test_happy() public {
+    // claim the hat
+    vm.prank(claimer1);
+    instance.claimHatWithAgreement();
+
+    // revoke
+    vm.prank(arbitrator);
+    instance.revoke(claimer1);
+
+    assertFalse(instance.wearerStanding(claimer1));
+    assertFalse(HATS.isWearerOfHat(claimer1, claimableHat));
+
+    // forgive
+    vm.prank(arbitrator);
+    instance.forgive(claimer1);
+
+    assertTrue(instance.wearerStanding(claimer1));
+    assertFalse(HATS.isWearerOfHat(claimer1, claimableHat));
+  }
+
+  function test_revert_notArbitrator() public {
+    // claim the hat
+    vm.prank(claimer1);
+    instance.claimHatWithAgreement();
+
+    // revoke
+    vm.prank(arbitrator);
+    instance.revoke(claimer1);
+
+    // attempt to forgive from non-arbitrator, expecting revert
+    vm.prank(nonWearer);
+    vm.expectRevert(AgreementClaimsHatter_NotArbitrator.selector);
+    instance.forgive(claimer1);
+
+    assertFalse(instance.wearerStanding(claimer1));
   }
 }
 
@@ -346,7 +424,7 @@ contract WearerStatus is WithInstanceTest {
   bool public standing;
   bytes32 newAgreement = keccak256("this is the new agreement");
 
-  function test_claimed() public Eligible GoodStanding {
+  function test_claimed() public Eligible goodStanding {
     // claim the hat
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
@@ -354,7 +432,7 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_signedNew() public Eligible GoodStanding {
+  function test_signedNew() public Eligible goodStanding {
     // claim the hat
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
@@ -370,7 +448,7 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_signedOld_inGracePeriod() public Eligible GoodStanding {
+  function test_signedOld_inGracePeriod() public Eligible goodStanding {
     // claim the hat
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
@@ -380,7 +458,7 @@ contract WearerStatus is WithInstanceTest {
     instance.setAgreement(newAgreement, gracePeriod);
 
     // don't sign the new agreement
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
 
     // warp to within grace period
     vm.warp(instance.graceEndsAt() - 1);
@@ -388,7 +466,7 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_signedOld_afterGracePeriod() public notEligible GoodStanding {
+  function test_signedOld_afterGracePeriod() public notEligible goodStanding {
     // claim the hat
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
@@ -398,7 +476,7 @@ contract WearerStatus is WithInstanceTest {
     instance.setAgreement(newAgreement, gracePeriod);
 
     // don't sign the new agreement
-    assertEq(instance.claimerAgreements(claimer1), agreement);
+    assertEq(instance.claimerAgreements(claimer1), 1);
 
     // warp to after grace period
     vm.warp(instance.graceEndsAt());
@@ -406,7 +484,54 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_revoked() public notEligible BadStanding {
+  function test_signedPrevious_inGracePeriod() public Eligible goodStanding {
+    // claim the hat
+    vm.prank(claimer1);
+    instance.claimHatWithAgreement();
+
+    // new agreement is set
+    vm.prank(dao);
+    instance.setAgreement(newAgreement, gracePeriod);
+
+    // sign the new agreement
+    vm.prank(claimer1);
+    instance.signAgreement();
+    assertEq(instance.claimerAgreements(claimer1), 2);
+
+    // 3rd agreement is set
+    vm.prank(dao);
+    instance.setAgreement(keccak256("this is the 3rd agreement"), gracePeriod);
+
+    // don't sign the 3rd agreement
+    assertEq(instance.claimerAgreements(claimer1), 2);
+
+    // warp to in grace period
+    vm.warp(instance.graceEndsAt() - 1);
+
+    (eligible, standing) = instance.getWearerStatus(claimer1, 0);
+  }
+
+  function test_signedNew_afterGracePeriod() public Eligible goodStanding {
+    // claim the hat
+    vm.prank(claimer1);
+    instance.claimHatWithAgreement();
+
+    // new agreement is set
+    vm.prank(dao);
+    instance.setAgreement(newAgreement, gracePeriod);
+
+    // sign the new agreement
+    vm.prank(claimer1);
+    instance.signAgreement();
+    assertEq(instance.claimerAgreements(claimer1), 2);
+
+    // warp to after grace period
+    vm.warp(instance.graceEndsAt());
+
+    (eligible, standing) = instance.getWearerStatus(claimer1, 0);
+  }
+
+  function test_revoked() public notEligible badStanding {
     // claim the hat
     vm.prank(claimer1);
     instance.claimHatWithAgreement();
@@ -418,9 +543,9 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_notClaimed_afterGracePeriod() public notEligible GoodStanding {
+  function test_notClaimed_afterGracePeriod() public notEligible goodStanding {
     // not claimed
-    assertEq(instance.claimerAgreements(claimer1), bytes32(0));
+    assertEq(instance.claimerAgreements(claimer1), 0);
 
     // warp to after grace period
     vm.warp(instance.graceEndsAt());
@@ -428,9 +553,9 @@ contract WearerStatus is WithInstanceTest {
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
 
-  function test_securityAssumption_notClaimed_inGracePeriod() public Eligible GoodStanding {
+  function test_notClaimed_inGracePeriod() public notEligible goodStanding {
     // not claimed
-    assertEq(instance.claimerAgreements(claimer1), bytes32(0));
+    assertEq(instance.claimerAgreements(claimer1), 0);
 
     (eligible, standing) = instance.getWearerStatus(claimer1, 0);
   }
@@ -446,13 +571,13 @@ contract WearerStatus is WithInstanceTest {
     assertTrue(eligible);
   }
 
-  modifier BadStanding() {
+  modifier badStanding() {
     _;
     assertFalse(standing);
     assertFalse(HATS.isWearerOfHat(claimer1, claimableHat));
   }
 
-  modifier GoodStanding() {
+  modifier goodStanding() {
     _;
     assertTrue(standing);
   }
