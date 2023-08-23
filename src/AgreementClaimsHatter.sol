@@ -33,11 +33,11 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
   //////////////////////////////////////////////////////////////*/
 
   /// @dev Emitted when a user "signs" the `agreement` and claims the hat
-  event AgreementClaimsHatter_HatClaimedWithAgreement(address claimer, uint256 hatId, bytes32 agreement);
+  event AgreementClaimsHatter_HatClaimedWithAgreement(address claimer, uint256 hatId, string agreement);
   /// @dev Emitted when a user "signs" the `agreement` without claiming the hat
-  event AgreementClaimsHatter_AgreementSigned(address signer, bytes32 agreement);
+  event AgreementClaimsHatter_AgreementSigned(address signer, string agreement);
   /// @dev Emitted when a new `agreement` is set
-  event AgreementClaimsHatter_AgreementSet(bytes32 agreement, uint256 grace);
+  event AgreementClaimsHatter_AgreementSet(string agreement, uint256 grace);
 
   /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -86,19 +86,20 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
                             MUTABLE STATE
   //////////////////////////////////////////////////////////////*/
 
-  /// @dev Array of all agreements, as hashes of the agreement plaintext (likely a CID). The current agreement is the
-  /// last in the array, ie `_agreements[_agreements.length - 1]`
-  bytes32[] internal _agreements;
+  /// @dev The current agreement, typically as a CID of the agreement plaintext
+  string public currentAgreement;
 
   /// @notice The id of the current agreement
-  /// @dev The first agreement is 1, so `currentAgreementId = _agreements.length - 1`
-  uint256 public currentAgreementId; // initialized at 0, but the first agreementId is set to 1 in {setUp}
+  /// @dev The first agreement is id 1 (see {setUp}) so that id 0 can be used in {claimerAgreements} to indicate that an
+  /// address has not signed any agreements
+  uint256 public currentAgreementId;
 
   /// @notice The timestamp at which the current grace period ends. Existing wearers of `hatId` have until this time to
   /// sign the current agreement.
   uint256 public graceEndsAt;
 
   /// @notice The most recent agreement that each wearer has signed
+  /// @dev agreementId=0 indicates that the wearer has not signed any agreements
   mapping(address claimer => uint256 agreementId) public claimerAgreements;
 
   /// @dev The inverse of the standing of each wearer; inversed so that wearers are in good standing by default
@@ -119,10 +120,11 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
   /// @inheritdoc HatsModule
   function setUp(bytes calldata _initData) public override initializer {
     // decode init data
-    (bytes32 agreement, uint256 _grace) = abi.decode(_initData, (bytes32, uint256));
+    (string memory agreement, uint256 _grace) = abi.decode(_initData, (string, uint256));
 
-    // set up the initial agreement
-    _addAgreement(agreement);
+    // set the initial agreement
+    currentAgreement = agreement;
+    ++currentAgreementId;
 
     // grace period must be at least `MIN_GRACE`
     if (_grace < MIN_GRACE()) revert AgreementClaimsHatter_GraceTooShort();
@@ -145,12 +147,14 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
     // we need to set the claimer's agreement before minting so that they are eligible for the hat on minting
     claimerAgreements[msg.sender] = agreementId;
 
+    /**
+     * @dev this call will revert if msg.sender...
+     *       - is currently wearing the hat, or
+     *       - is in bad standing for the hat
+     */
     HATS().mintHat(hatId(), msg.sender);
 
-    unchecked {
-      /// @dev agreementId is always > 0 after initialization, so this subtraction is safe
-      emit AgreementClaimsHatter_HatClaimedWithAgreement(msg.sender, hatId(), _agreements[agreementId - 1]);
-    }
+    emit AgreementClaimsHatter_HatClaimedWithAgreement(msg.sender, hatId(), currentAgreement);
   }
 
   /**
@@ -158,9 +162,7 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
    * @dev Reverts if the caller has not already claimed the hat or has already signed the current agreement.
    */
   function signAgreement() public {
-    // bytes32 _agreement = agreement; // save SLOADs
     uint256 agreementId = currentAgreementId; // save SLOADs
-    // bytes32 _claimerAgreement = claimerAgreements[msg.sender]; // save SLOADs
     uint256 claimerAgreementId = claimerAgreements[msg.sender]; // save SLOADs
 
     if (claimerAgreementId == 0) revert AgreementClaimsHatter_HatNotClaimed();
@@ -169,10 +171,7 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
 
     claimerAgreements[msg.sender] = agreementId;
 
-    unchecked {
-      /// @dev agreementId is always > 0 after initialization, so this subtraction is safe
-      emit AgreementClaimsHatter_AgreementSigned(msg.sender, _agreements[agreementId - 1]);
-    }
+    emit AgreementClaimsHatter_AgreementSigned(msg.sender, currentAgreement);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -216,14 +215,16 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
    * @param _agreement The new agreement, as a hash of the agreement plaintext (likely a CID)
    * @param _grace The new grace period; must be at least `MIN_GRACE` seconds and end after the current grace period
    */
-  function setAgreement(bytes32 _agreement, uint256 _grace) public onlyOwner {
+  function setAgreement(string calldata _agreement, uint256 _grace) public onlyOwner {
     uint256 _graceEndsAt = block.timestamp + _grace;
 
     if (_grace < MIN_GRACE()) revert AgreementClaimsHatter_GraceTooShort();
+    // new grace period must end after the current grace period
     if (_graceEndsAt < graceEndsAt) revert AgreementClaimsHatter_GraceNotOver();
 
     graceEndsAt = _graceEndsAt;
-    _addAgreement(_agreement);
+    currentAgreement = _agreement;
+    ++currentAgreementId;
 
     emit AgreementClaimsHatter_AgreementSet(_agreement, _graceEndsAt);
   }
@@ -264,41 +265,12 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
                           VIEW FUNCTIONS
   //////////////////////////////////////////////////////////////*/
 
-  /// @notice Returns the agreement hash for a given `_agreementId`
-  function getAgreement(uint256 _agreementId) public view returns (bytes32) {
-    unchecked {
-      /// @dev agreementId is always > 0 after initialization, so this subtraction is safe
-      return _agreements[_agreementId - 1];
-    }
-  }
-
-  /// @notice Returns the current agreement hash
-  function getCurrentAgreement() public view returns (bytes32) {
-    unchecked {
-      /// @dev agreementId is always > 0 after initialization, so this subtraction is safe
-      return _agreements[currentAgreementId - 1];
-    }
-  }
-
   /**
    * @notice Returns whether `_wearer` is in good standing
    * @param _wearer The address to check
    */
   function wearerStanding(address _wearer) public view returns (bool) {
     return !_badStandings[_wearer];
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
-  //////////////////////////////////////////////////////////////*/
-
-  /**
-   * @dev Adds a new agreement to the `_agreements` array and increments `currentAgreementId`
-   * @param _agreement The new agreement, as a hash of the agreement plaintext (likely a CID)
-   */
-  function _addAgreement(bytes32 _agreement) internal {
-    _agreements.push(_agreement);
-    ++currentAgreementId;
   }
 
   /*//////////////////////////////////////////////////////////////

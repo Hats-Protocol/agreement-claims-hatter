@@ -32,9 +32,9 @@ contract AgreementClaimsHatterTest is Deploy, Test {
   string public FACTORY_VERSION = "factory test version";
   string public MODULE_VERSION = "module test version";
 
-  event AgreementClaimsHatter_HatClaimedWithAgreement(address claimer, uint256 hatId, bytes32 agreement);
-  event AgreementClaimsHatter_AgreementSigned(address signer, bytes32 agreement);
-  event AgreementClaimsHatter_AgreementSet(bytes32 agreement, uint256 grace);
+  event AgreementClaimsHatter_HatClaimedWithAgreement(address claimer, uint256 hatId, string agreement);
+  event AgreementClaimsHatter_AgreementSigned(address signer, string agreement);
+  event AgreementClaimsHatter_AgreementSet(string agreement, uint256 grace);
 
   function setUp() public virtual {
     // create and activate a fork, at BLOCK_NUMBER
@@ -66,7 +66,7 @@ contract WithInstanceTest is AgreementClaimsHatterTest {
   address public claimer2 = makeAddr("claimer2");
   address public nonWearer = makeAddr("nonWearer");
 
-  bytes32 public agreement;
+  string public agreement;
   uint256 public gracePeriod;
   uint256 public minGrace = 7 days;
   uint256 public currentAgreementId;
@@ -76,7 +76,7 @@ contract WithInstanceTest is AgreementClaimsHatterTest {
     uint256 _ownerHat,
     uint256 _arbitratorHat,
     uint256 _minGrace,
-    bytes32 _agreement,
+    string memory _agreement,
     uint256 _grace
   ) public returns (AgreementClaimsHatter) {
     // encode the other immutable args as packed bytes
@@ -105,7 +105,7 @@ contract WithInstanceTest is AgreementClaimsHatterTest {
     vm.stopPrank();
 
     // set up initial agreement
-    agreement = keccak256("this is the first agreement");
+    agreement = "this is the first agreement";
     gracePeriod = 9 days; // the min + 2 days
 
     // deploy the instance
@@ -146,7 +146,7 @@ contract Deployment is WithInstanceTest {
   }
 
   function test_agreement() public {
-    assertEq(instance.getCurrentAgreement(), agreement);
+    assertEq(instance.currentAgreement(), agreement);
   }
 
   function test_agreementId() public {
@@ -161,7 +161,7 @@ contract Deployment is WithInstanceTest {
 contract SetAgreement is WithInstanceTest {
   function setUp() public virtual override {
     super.setUp();
-    agreement = keccak256("this is the new agreement");
+    agreement = "this is the new agreement";
   }
 
   function test_happy() public {
@@ -173,7 +173,7 @@ contract SetAgreement is WithInstanceTest {
     vm.prank(dao);
     instance.setAgreement(agreement, gracePeriod);
 
-    assertEq(instance.getCurrentAgreement(), agreement);
+    assertEq(instance.currentAgreement(), agreement);
     assertEq(instance.currentAgreementId(), 2);
     assertEq(instance.graceEndsAt(), block.timestamp + gracePeriod);
   }
@@ -281,7 +281,7 @@ contract SignAgreement is WithInstanceTest {
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // new agreement is set
-    bytes32 newAgreement = keccak256("this is the new agreement");
+    string memory newAgreement = "this is the new agreement";
     vm.prank(dao);
     instance.setAgreement(newAgreement, gracePeriod);
 
@@ -328,7 +328,7 @@ contract SignAgreement is WithInstanceTest {
     assertTrue(HATS.isWearerOfHat(claimer1, claimableHat));
 
     // new agreement is set
-    bytes32 newAgreement = keccak256("this is the new agreement");
+    string memory newAgreement = "this is the new agreement";
     vm.prank(dao);
     instance.setAgreement(newAgreement, gracePeriod);
 
@@ -422,7 +422,7 @@ contract Forgive is WithInstanceTest {
 contract WearerStatus is WithInstanceTest {
   bool public eligible;
   bool public standing;
-  bytes32 newAgreement = keccak256("this is the new agreement");
+  string newAgreement = "this is the new agreement";
 
   function test_claimed() public Eligible goodStanding {
     // claim the hat
@@ -500,7 +500,7 @@ contract WearerStatus is WithInstanceTest {
 
     // 3rd agreement is set
     vm.prank(dao);
-    instance.setAgreement(keccak256("this is the 3rd agreement"), gracePeriod);
+    instance.setAgreement("this is the 3rd agreement", gracePeriod);
 
     // don't sign the 3rd agreement
     assertEq(instance.claimerAgreements(claimer1), 2);
