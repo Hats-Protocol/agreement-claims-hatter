@@ -6,7 +6,7 @@ import { AgreementClaimsHatter } from "../src/AgreementClaimsHatter.sol";
 
 contract Deploy is Script {
   address public implementation;
-  bytes32 public SALT = keccak256("lets add some salt to this meal");
+  bytes32 public SALT = bytes32(abi.encode(0x4a75)); // "hats"
 
   // default values
   bool private verbose = true;
@@ -33,4 +33,10 @@ contract Deploy is Script {
   }
 }
 
-// forge script script/Deploy.s.sol -f ethereum --broadcast --verify
+// forge script script/AgreementClaimsHatter.s.sol -f ethereum --broadcast --verify
+
+/* 
+forge verify-contract --chain-id 5 --num-of-optimizations 1000000 --watch --constructor-args $(cast abi-encode \
+"constructor(string)" "0.0.1" ) --compiler-version v0.8.19 0xE43C43d93B22EB3CB0aEB05746094c0925FDC262 \
+src/AgreementClaimsHatter.sol:AgreementClaimsHatter --etherscan-api-key $ETHERSCAN_KEY 
+*/
