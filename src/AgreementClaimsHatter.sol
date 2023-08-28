@@ -118,7 +118,7 @@ contract AgreementClaimsHatter is HatsEligibilityModule {
   //////////////////////////////////////////////////////////////*/
 
   /// @inheritdoc HatsModule
-  function setUp(bytes calldata _initData) public override initializer {
+  function _setUp(bytes calldata _initData) internal override {
     // decode init data
     (string memory agreement, uint256 _grace) = abi.decode(_initData, (string, uint256));
 
